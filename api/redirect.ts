@@ -1,13 +1,12 @@
-import { createNowFn, Records } from "../deps.ts";
+import { Airtable, createNowFn, FieldSet, TableRecord } from "../deps.ts";
 
 const CACHE_DURATION_MS = 10000;
 
 const apiKey = Deno.env.get("AIRTABLE_API_KEY");
 const baseId = Deno.env.get("AIRTABLE_BASE_ID");
 const tableName = "Links";
-const viewName = "Grid view";
 
-let links: Records<Link>;
+let links: TableRecord<Link>[];
 let lastUpdated: number;
 
 export const handler = createNowFn(async (req, res) => {
@@ -27,12 +26,11 @@ export const handler = createNowFn(async (req, res) => {
   const isCacheExpired = currentTime - lastUpdated > CACHE_DURATION_MS;
 
   if (isForceReload || isLinksEmpty || isCacheExpired) {
-    const endpoint = `https://api.airtable.com/v0/${baseId}/${tableName}/?maxRecords=9999&view=${viewName}`;
-    const data = await fetch(endpoint, {
-      headers: { ["Authorization"]: `Bearer ${apiKey}` },
-    }).then((res) => res.json());
+    if (!links) {
+      const airtable = new Airtable({ apiKey, baseId, tableName });
+      links = await airtable.select<Link>().then((res) => res.records);
+    }
 
-    links = data.records;
     lastUpdated = currentTime;
   }
 
@@ -49,12 +47,8 @@ export const handler = createNowFn(async (req, res) => {
   return res.writeHead(404, { error: "link not found", source, timestamp });
 });
 
-interface Link {
-  name: string;
-  uid: string;
+interface Link extends FieldSet<string> {
   resolvedUid: string;
   url: string;
-  redirectUrl: string;
-  useGeneratedUid: boolean;
   enabled: boolean;
 }
